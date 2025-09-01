@@ -35,20 +35,41 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           update: false
-          release: false
+          install: false
           msystem: ${{ matrix.msystem }}
-          install: >-
-            mingw-w64-${{ matrix.env }}-pkgconf
-            mingw-w64-${{ matrix.env }}-gcc
-            mingw-w64-${{ matrix.env }}-libadwaita
-            mingw-w64-${{ matrix.env }}-gstreamer
-            mingw-w64-${{ matrix.env }}-glib2
-            mingw-w64-${{ matrix.env }}-gst-plugins-base
-            mingw-w64-${{ matrix.env }}-gst-plugins-good
-            mingw-w64-${{ matrix.env }}-gst-plugins-bad
-            mingw-w64-${{ matrix.env }}-gst-plugins-ugly
-            mingw-w64-${{ matrix.env }}-gst-libav
-            curl
+
+      - name: Install packages with retry
+        shell: msys2 {0}
+        run: |
+          # 配置pacman使用更可靠的设置
+          sed -i 's/#ParallelDownloads = 5/ParallelDownloads = 3/' /etc/pacman.conf
+          sed -i 's/#XferCommand/XferCommand/' /etc/pacman.conf
+          sed -i 's/XferCommand = \/usr\/bin\/curl -L -C - -f -o %o %u/XferCommand = \/usr\/bin\/curl --connect-timeout 60 --max-time 300 -L -C - -f -o %o %u/' /etc/pacman.conf
+          
+          # 强制刷新包数据库
+          pacman -Syy --noconfirm
+          
+          # 分批安装基础包（最小集合）
+          pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-gcc
+          pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-pkgconf
+          
+          # 安装GTK相关
+          pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-gtk4
+          pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-libadwaita
+          pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-glib2
+          
+          # 安装GStreamer（分开安装避免大包下载失败）
+          pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-gstreamer
+          pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-gst-plugins-base
+          
+          # 尝试安装其他插件，如果失败就跳过
+          pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-gst-plugins-good || echo "gst-plugins-good failed, continuing..."
+          pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-gst-plugins-bad || echo "gst-plugins-bad failed, continuing..."
+          pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-gst-plugins-ugly || echo "gst-plugins-ugly failed, continuing..."
+          pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-gst-libav || echo "gst-libav failed, continuing..."
+          
+          # 安装其他必需工具
+          pacman -S --noconfirm --needed curl
 
       - name: Cache
         uses: actions/cache@v4
@@ -62,10 +83,10 @@ jobs:
 
       - name: Setup sccache
         run: |
-            choco install sccache
-            sccache --start-server
-            sccache -z
-            sccache -s
+          choco install sccache
+          sccache --start-server
+          sccache -z
+          sccache -s
 
       - name: Install latest libmpv
         shell: pwsh
