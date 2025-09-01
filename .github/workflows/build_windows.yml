@@ -67,7 +67,7 @@ jobs:
           pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-gst-plugins-bad || echo "gst-plugins-bad failed, continuing..."
           pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-gst-plugins-ugly || echo "gst-plugins-ugly failed, continuing..."
           pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-gst-libav || echo "gst-libav failed, continuing..."
-          
+        
           
           # 安装其他必需工具
           pacman -S --noconfirm --needed curl
@@ -89,67 +89,32 @@ jobs:
           sccache -z
           sccache -s
 
-      - name: Install latest libmpv
-        shell: pwsh
-        env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install MPV from MSYS2
+        shell: msys2 {0}
         run: |
-          Write-Host "=== Starting MPV installation ==="
-          
-          # 测试 GitHub API 访问
-          Write-Host "Testing GitHub API access..."
-          $json = curl -s "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest" | ConvertFrom-Json
-          
-          if (-not $json) {
-            Write-Host "ERROR: Failed to get release info from GitHub API"
-            exit 1
-          }
-          
-          Write-Host "Latest release: $($json.tag_name)"
-          Write-Host "Available assets:"
-          $json.assets | ForEach-Object { Write-Host "  - $($_.name)" }
-          
-          # 查找MPV开发版文件
-          $asset = $json.assets | Where-Object { $_.name -match "mpv-dev-x86_64-\d{8}-git" } | Select-Object -First 1
-          
-          if (-not $asset) {
-            Write-Host "ERROR: No matching MPV dev asset found"
-            Write-Host "Looking for pattern: mpv-dev-x86_64-YYYYMMDD-git"
-            exit 1
-          }
-          
-          Write-Host "Found MPV asset: $($asset.name)"
-          Write-Host "Download URL: $($asset.browser_download_url)"
-          
-          # 下载文件
-          Write-Host "Downloading MPV..."
-          curl -L -o $asset.name $asset.browser_download_url
-          
-          if (-not (Test-Path $asset.name)) {
-            Write-Host "ERROR: Download failed"
-            exit 1
-          }
-          
-          Write-Host "Download successful, size: $((Get-Item $asset.name).Length) bytes"
-          
-          # 解压和复制
-          Write-Host "Extracting MPV..."
-          7z x -y $asset.name -olibmpv
-          
-          Write-Host "Copying MPV files to MSYS2..."
-          cp -force libmpv/libmpv.dll.a c:/msys64/${{ matrix.msystem }}/lib/
-          cp -force libmpv/libmpv-2.dll c:/msys64/${{ matrix.msystem }}/bin/
-          cp -force -recurse libmpv/include/mpv c:/msys64/${{ matrix.msystem }}/include/
-          
-          Write-Host "=== MPV installation completed ==="
-          
-          # 验证安装
-          Write-Host "Verifying installation..."
-          if (Test-Path "c:/msys64/${{ matrix.msystem }}/lib/libmpv.dll.a") {
-            Write-Host "✅ libmpv.dll.a found"
-          } else {
-            Write-Host "❌ libmpv.dll.a NOT found"
-          }
+            echo "=== Installing MPV from MSYS2 ==="
+            
+            # 安装MPV开发库
+            pacman -S --noconfirm --needed mingw-w64-${{ matrix.env }}-mpv
+            
+            # 验证安装
+            echo "=== Verifying MPV installation ==="
+            ls -la /${{ matrix.msystem }}/lib/ | grep -i mpv || echo "No mpv lib files"
+            ls -la /${{ matrix.msystem }}/include/ | grep -i mpv || echo "No mpv include files"
+            
+            # 检查关键文件
+            if [ -f "/${{ matrix.msystem }}/lib/libmpv.dll.a" ]; then
+              echo "✅ libmpv.dll.a found"
+            else
+              echo "❌ libmpv.dll.a NOT found"
+              echo "Available lib files:"
+              find /${{ matrix.msystem }}/lib/ -name "*mpv*" -type f
+            fi
+            
+            # 测试pkg-config
+            pkg-config --exists mpv && echo "✅ mpv pkg-config OK" || echo "❌ mpv pkg-config failed"
+            
+            echo "=== MPV installation completed ==="
 
       - name: Build tsukimi-${{ matrix.target }}
         shell: msys2 {0}
